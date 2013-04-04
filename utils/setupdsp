@@ -1,0 +1,4 @@
+#!/bin/sh
+
+/usr/share/ti/ti-dsplink-examples/ti-dsplink-examples-loadmodules.sh
+
