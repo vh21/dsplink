@@ -59,6 +59,8 @@
 #include <loop.h>
 #include <loop_os.h>
 
+/*  ----------------------------------- C Libraries                     */
+#include <string.h>
 
 #if defined (__cplusplus)
 extern "C" {
@@ -178,9 +180,8 @@ extern  LINKCFG_Object LINKCFG_config ;
 #endif
 
 
-#if defined (VERIFY_DATA)
 /** ----------------------------------------------------------------------------
- *  @func   LOOP_VerifyData
+ *  @func   LOOP_HandleResultData
  *
  *  @desc   This function verifies the data-integrity of given buffer.
  *
@@ -204,10 +205,55 @@ extern  LINKCFG_Object LINKCFG_config ;
 STATIC
 NORMAL_API
 DSP_STATUS
-LOOP_VerifyData (IN Char8 * buf) ;
-#endif /*  defined (VERIFY_DATA) */
+LOOP_HandleResultData (IN Char8 * buf) ;
 
+/* maximum size of transmission buffer to/from DSP */
+#define MAX_BUFFER_SIZE 1024	
 
+/* Buffer of source data transfered to DSP */
+Char8 source_data[MAX_BUFFER_SIZE];
+
+/* Buffer of result data received from DSP */
+Char8 result_data[MAX_BUFFER_SIZE];
+
+/* Buffer to store expected value for verification */
+Char8 expect_data[MAX_BUFFER_SIZE];
+
+/** ----------------------------------------------------------------------------
+ *  @func   LOOP_InitData
+ *
+ *  @desc   This function writes source data to dsp buffer
+ *
+ *  @modif  None
+ *  ----------------------------------------------------------------------------
+ */
+STATIC
+DSP_STATUS
+LOOP_InitData(IN Char8 * buf)
+{
+    Uint32 i;
+
+    if (buf == NULL)
+        return DSP_EFAIL ;
+
+    /*
+     * prepare data
+     * example buffer with size 20, you can replace it by your source data size
+     */
+    for(i = 0; i < 20; i++) {
+        source_data[i] = i;
+    }
+
+    /* prepare expected data for verification */
+    for(i = 0; i < 20; i++) {
+        expect_data[i] = i * i;
+    }
+
+    /* copy source data into DSP buffer */
+    memcpy (buf, &source_data[0], 20);
+
+    return DSP_SOK ;
+}
 
 /** ============================================================================
  *  @func   LOOP_Create
@@ -358,10 +404,9 @@ LOOP_Create (IN Char8 * dspExecutable,
      */
     if (DSP_SUCCEEDED (status)) {
         temp = LOOP_Buffers [0] ;
-
         for (i = 0 ; i < LOOP_BufferSize ; i++) {
             *temp++ = XFER_CHAR ;
-        }
+       }
     }
 
     LOOP_0Print ("Leaving LOOP_Create ()\n") ;
@@ -409,13 +454,24 @@ LOOP_Execute (IN Uint32 numIterations, Uint8 processorId)
           && (DSP_SUCCEEDED (status)) ;
          i++) {
         /*
+         *  Initialize data
+         */
+        status = LOOP_InitData(LOOP_IOReq.buffer);
+        if (DSP_FAILED (status)) {
+            LOOP_0Print ("Init data failed.\n") ;
+            status = DSP_EFAIL;
+        }
+
+        /*
          *  Send data to DSP.
          *  Issue 'filled' buffer to the channel.
          */
-        status = CHNL_issue (processorId, CHNL_ID_OUTPUT, &LOOP_IOReq) ;
-        if (DSP_FAILED (status)) {
-            LOOP_1Print ("CHNL_issue failed (output). Status = [0x%x]\n",
-                          status) ;
+        if (DSP_SUCCEEDED (status)) {
+            status = CHNL_issue (processorId, CHNL_ID_OUTPUT, &LOOP_IOReq) ;
+            if (DSP_FAILED (status)) {
+                LOOP_1Print ("CHNL_issue failed (output). Status = [0x%x]\n",
+                              status) ;
+            }
         }
 
         /*
@@ -458,17 +514,15 @@ LOOP_Execute (IN Uint32 numIterations, Uint8 processorId)
             }
         }
 
-#if defined (VERIFY_DATA)
         /*
          *  Verify correctness of data received.
          */
         if (DSP_SUCCEEDED (status)) {
-            status = LOOP_VerifyData (LOOP_IOReq.buffer) ;
+            status = LOOP_HandleResultData (LOOP_IOReq.buffer) ;
             if (DSP_FAILED (status)) {
                 LOOP_0Print ("Data integrity failed\n") ;
             }
         }
-#endif
 
         if (DSP_SUCCEEDED (status) && (i % 1000) == 0) {
             LOOP_1Print ("Transferred %ld buffers\n", i) ;
@@ -582,19 +636,27 @@ LOOP_Main (IN Char8 * dspExecutable,
 
     LOOP_0Print ("=============== Sample Application : LOOP ==========\n") ;
 
+    memset (&source_data[0], 0, sizeof(source_data));
+    memset (&result_data[0], 0, sizeof(result_data));
+    memset (&expect_data[0], 0, sizeof(expect_data));
+
     if (   (dspExecutable != NULL)
         && (strBufferSize != NULL)
         && (strNumIterations != NULL)) {
         /*
          *  Validate the buffer size and number of iterations specified.
          */
-        LOOP_BufferSize = DSPLINK_ALIGN (LOOP_Atoi (strBufferSize),
+        LOOP_BufferSize = DSPLINK_ALIGN (MAX_BUFFER_SIZE,
                                          DSPLINK_BUF_ALIGN) ;
+
         if (LOOP_BufferSize == 0) {
             status = DSP_ESIZE ;
         }
 
         LOOP_NumIterations = LOOP_Atoi (strNumIterations) ;
+        /* execute only once */
+        LOOP_NumIterations = 1 ;
+
         /* Find out the processor id to work with */
         processorId        = LOOP_Atoi (strProcessorId) ;
         if (processorId >= MAX_DSPS) {
@@ -636,9 +698,8 @@ LOOP_Main (IN Char8 * dspExecutable,
     LOOP_0Print ("====================================================\n") ;
 }
 
-#if defined (VERIFY_DATA)
 /** ----------------------------------------------------------------------------
- *  @func   LOOP_VerifyData
+ *  @func   LOOP_HandleResultData
  *
  *  @desc   This function verifies the data-integrity of given buffer.
  *
@@ -648,23 +709,29 @@ LOOP_Main (IN Char8 * dspExecutable,
 STATIC
 NORMAL_API
 DSP_STATUS
-LOOP_VerifyData (IN Char8 * buf)
+LOOP_HandleResultData (IN Char8 * buf)
 {
     DSP_STATUS status = DSP_SOK ;
     Int16      i                ;
+    Char8      data             ;
+
+    /*
+     *  Copy out the data from DSP.
+     */
+    memcpy (&result_data[0], buf, 20);
 
     /*
      *  Verify the data.
      */
-    for (i = 0 ; (i < LOOP_BufferSize) && (DSP_SUCCEEDED (status)) ; i++) {
-        if (*buf++ != XFER_CHAR) {
+    for (i = 0 ; (i < 20) && (DSP_SUCCEEDED (status)) ; i++) {
+        if (result_data[i] != expect_data[i]) {
             status = DSP_EFAIL ;
         }
+        printf("result[%d] from dsp = %d (%d expected)\n", i, result_data[i], expect_data[i]);
     }
 
     return status ;
 }
-#endif
 
 
 #if defined (__cplusplus)

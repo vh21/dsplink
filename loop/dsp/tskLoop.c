@@ -127,6 +127,26 @@ DEV_Attrs dioDevAttrs = {
 } ;
 #endif
 
+Int TSKLOOP_calculate (Char * buf, Int size)
+{
+    Int  status = SYS_OK ;
+    Int  i ;
+    Char data;
+
+    for(i = 0; i < size; i++) {
+        /* read data from buffer from CPU */
+        data = *(buf + i);
+
+        /* calculate it */
+        data = data * data;
+
+        /* write data back to buffer to CPU */
+        *(buf + i) = data;
+    }
+
+    return status;
+}
+
 /** ============================================================================
  *  @func   TSKLOOP_create
  *
@@ -279,6 +299,7 @@ Int TSKLOOP_execute(TSKLOOP_TransferInfo * info)
         /* Do processing on this buffer */
         if (status == SYS_OK) {
             /* Add code to process the buffer here*/
+            status = TSKLOOP_calculate(buffer, nmadus);
         }
 
         /* Send the processed buffer back to GPP */
