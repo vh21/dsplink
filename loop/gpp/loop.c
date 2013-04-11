@@ -208,16 +208,18 @@ DSP_STATUS
 LOOP_HandleResultData (IN Char8 * buf) ;
 
 /* maximum size of transmission buffer to/from DSP */
-#define MAX_BUFFER_SIZE 1024	
+#define MYBUF_TYPE		Uint16
+#define MAX_BUFFER_SIZE		512
+#define MAX_XFER_SIZE		(MAX_BUFFER_SIZE * sizeof(MYBUF_TYPE))
 
 /* Buffer of source data transfered to DSP */
-Char8 source_data[MAX_BUFFER_SIZE];
+MYBUF_TYPE source_data[MAX_BUFFER_SIZE];
 
 /* Buffer of result data received from DSP */
-Char8 result_data[MAX_BUFFER_SIZE];
+MYBUF_TYPE result_data[MAX_BUFFER_SIZE];
 
 /* Buffer to store expected value for verification */
-Char8 expect_data[MAX_BUFFER_SIZE];
+MYBUF_TYPE expect_data[MAX_BUFFER_SIZE];
 
 /** ----------------------------------------------------------------------------
  *  @func   LOOP_InitData
@@ -250,7 +252,7 @@ LOOP_InitData(IN Char8 * buf)
     }
 
     /* copy source data into DSP buffer */
-    memcpy (buf, &source_data[0], 20);
+    memcpy (buf, &source_data[0], 20 * sizeof(MYBUF_TYPE));
 
     return DSP_SOK ;
 }
@@ -646,7 +648,7 @@ LOOP_Main (IN Char8 * dspExecutable,
         /*
          *  Validate the buffer size and number of iterations specified.
          */
-        LOOP_BufferSize = DSPLINK_ALIGN (MAX_BUFFER_SIZE,
+        LOOP_BufferSize = DSPLINK_ALIGN (MAX_XFER_SIZE,
                                          DSPLINK_BUF_ALIGN) ;
 
         if (LOOP_BufferSize == 0) {
@@ -718,7 +720,7 @@ LOOP_HandleResultData (IN Char8 * buf)
     /*
      *  Copy out the data from DSP.
      */
-    memcpy (&result_data[0], buf, 20);
+    memcpy (&result_data[0], buf, 20 * sizeof(MYBUF_TYPE));
 
     /*
      *  Verify the data.

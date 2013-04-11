@@ -127,21 +127,25 @@ DEV_Attrs dioDevAttrs = {
 } ;
 #endif
 
+#define MYBUF_TYPE	Uint16
+
 Int TSKLOOP_calculate (Char * buf, Int size)
 {
     Int  status = SYS_OK ;
     Int  i ;
-    Char data;
+    MYBUF_TYPE *newbuf = (MYBUF_TYPE *)buf;
+    Int        newsize = size / sizeof(MYBUF_TYPE);
+    MYBUF_TYPE data;
 
-    for(i = 0; i < size; i++) {
+    for(i = 0; i < newsize; i++) {
         /* read data from buffer from CPU */
-        data = *(buf + i);
+        data = *(newbuf + i);
 
         /* calculate it */
         data = data * data;
 
         /* write data back to buffer to CPU */
-        *(buf + i) = data;
+        *(newbuf + i) = data;
     }
 
     return status;
